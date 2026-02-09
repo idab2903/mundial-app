@@ -1,0 +1,206 @@
+// ============================================================
+// CONFIGURACIÓN DE PRISMA
+// ============================================================
+// generator → Le dice a Prisma que genere el cliente en JavaScript
+// datasource → Le dice a Prisma que use PostgreSQL y dónde está la DB
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// DEPORTES Y COMPETICIONES
+// ============================================================
+// Sport → Deporte (fútbol, basketball, etc.)
+//   Esto permite escalar la app a otros deportes después del mundial
+// Competition → Torneo específico (Mundial 2026, Liga Premier 2026, etc.)
+//   Se relaciona con un deporte y contiene grupos, etapas y partidos
+
+model Sport {
+  id           String        @id @default(cuid())
+  name         String        @unique // "football", "basketball"
+  displayName  String        // "Fútbol", "Basketball"
+  competitions Competition[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Competition {
+  id        String   @id @default(cuid())
+  name      String   // "FIFA World Cup 2026"
+  slug      String   @unique // "world-cup-2026" (para URLs amigables)
+  sportId   String
+  sport     Sport    @relation(fields: [sportId], references: [id])
+  season    String   // "2026"
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false)
+  groups    Group[]
+  matches   Match[]
+  stages    Stage[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// EQUIPOS Y GRUPOS
+// ============================================================
+// Team → Selección o club (Argentina, Real Madrid, etc.)
+// Group → Grupo dentro de una competición (Grupo A, Grupo B)
+// GroupTeam → Relación muchos-a-muchos entre Group y Team
+//   Aquí se guardan las estadísticas: puntos, goles, etc.
+//   ¿Por qué tabla separada? Porque un equipo puede estar en
+//   diferentes grupos en diferentes competiciones.
+
+model Team {
+  id          String      @id @default(cuid())
+  name        String      // "Argentina"
+  shortName   String      // "ARG"
+  flagUrl     String?     // ? = campo opcional (puede ser null)
+  fifaRanking Int?
+  groupTeams  GroupTeam[]
+  homeMatches Match[]     @relation("HomeTeam")
+  awayMatches Match[]     @relation("AwayTeam")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Group {
+  id            String      @id @default(cuid())
+  name          String      // "Grupo A"
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id])
+  teams         GroupTeam[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // @@unique = restricción compuesta: no puede haber dos "Grupo A"
+  // en la misma competición, pero sí en competiciones diferentes
+  @@unique([competitionId, name])
+}
+
+model GroupTeam {
+  id             String @id @default(cuid())
+  groupId        String
+  group          Group  @relation(fields: [groupId], references: [id])
+  teamId         String
+  team           Team   @relation(fields: [teamId], references: [id])
+  played         Int    @default(0)
+  won            Int    @default(0)
+  drawn          Int    @default(0)
+  lost           Int    @default(0)
+  goalsFor       Int    @default(0)
+  goalsAgainst   Int    @default(0)
+  goalDifference Int    @default(0)
+  points         Int    @default(0)
+
+  @@unique([groupId, teamId])
+}
+
+// ============================================================
+// PARTIDOS
+// ============================================================
+// Stage → Fase del torneo (Fase de Grupos, Octavos, Cuartos, etc.)
+//   "order" permite ordenarlas cronológicamente
+// Match → Un partido individual entre dos equipos
+//   Tiene relación con competición, fase, equipo local y visitante
+
+model Stage {
+  id            String      @id @default(cuid())
+  name          String      // "Fase de Grupos", "Octavos de Final"
+  order         Int         // 1, 2, 3... para ordenar
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id])
+  matches       Match[]
+
+  @@unique([competitionId, name])
+}
+
+model Match {
+  id            String      @id @default(cuid())
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id])
+  stageId       String
+  stage         Stage       @relation(fields: [stageId], references: [id])
+  homeTeamId    String
+  homeTeam      Team        @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId    String
+  awayTeam      Team        @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  homeScore     Int?        // null = no se ha jugado aún
+  awayScore     Int?
+  status        MatchStatus @default(SCHEDULED)
+  venue         String?     // "Estadio Azteca, CDMX"
+  matchDate     DateTime
+  matchday      Int?        // Jornada 1, 2, 3
+  odds          Odd[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // @@index = crea un índice en la DB para búsquedas rápidas
+  // Si buscas partidos por fecha frecuentemente, el índice lo acelera
+  @@index([matchDate])
+  @@index([status])
+}
+
+// enum = tipo especial que solo permite estos valores exactos
+// Si intentas guardar "PLAYING" da error porque no está en la lista
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  HALF_TIME
+  FINISHED
+  POSTPONED
+  CANCELLED
+}
+
+// ============================================================
+// NOTICIAS
+// ============================================================
+// News → Artículo de noticias scrapeado de sitios web
+//   sourceUrl es @unique para evitar guardar la misma noticia dos veces
+
+model News {
+  id          String   @id @default(cuid())
+  title       String
+  summary     String
+  content     String?
+  imageUrl    String?
+  sourceUrl   String   @unique // URL original (evita duplicados)
+  sourceName  String   // "ESPN", "Marca", "BBC"
+  publishedAt DateTime
+  scrapedAt   DateTime @default(now())
+  tags        String // Array de strings: ["mundial", "argentina"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([publishedAt])
+}
+
+// ============================================================
+// CUOTAS DE APUESTAS
+// ============================================================
+// Odd → Cuotas de un bookmaker para un partido específico
+//   homeWin, draw, awayWin = las 3 cuotas clásicas (1X2)
+//   redirectUrl = link al sitio de apuestas
+
+model Odd {
+  id          String   @id @default(cuid())
+  matchId     String
+  match       Match    @relation(fields: [matchId], references: [id])
+  bookmaker   String   // "Bet365", "Betway", "1xBet"
+  homeWin     Float    // 1.50
+  draw        Float    // 3.20
+  awayWin     Float    // 5.00
+  redirectUrl String   // URL para redirigir al sitio
+  lastUpdated DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Un bookmaker solo tiene UNA cuota por partido
+  @@unique([matchId, bookmaker])
+  @@index([matchId])
+}
