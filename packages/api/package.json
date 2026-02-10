@@ -2,17 +2,21 @@
   "name": "@mundial-app/api",
   "version": "0.0.1",
   "private": true,
-  "main": "dist/server.js",
+  "main": "dist/index.ts",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/index.ts",
     "test": "vitest"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.9",
+    "@prisma/adapter-pg": "^7.3.0",
+    "@prisma/client": "^7.3.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "hono": "^4.11.9"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
